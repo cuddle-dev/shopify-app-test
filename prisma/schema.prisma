@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model ShopSettings {
+  id              String   @id @default(cuid())
+  shop            String   @unique
+  llmProvider     String   @default("anthropic")
+  llmModel        String?
+  defaultLocales  String   @default("en-us")
+  brandTone       String   @default("premium, knowledgeable, warm")
+  competitorUrls  String?
+  minProductCount Int      @default(6)
+  similarityThreshold Float @default(0.85)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Keyword {
+  id            String   @id @default(cuid())
+  shop          String
+  rawKeyword    String
+  source        String   // auto | csv | manual
+  clusterId     String?
+  parsedIntent  String?  // JSON
+  status        String   @default("pending") // pending | approved | rejected
+  pageTypeId    String?
+  localeId      String   @default("en-us")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  plp           PlpPage?
+
+  @@unique([shop, rawKeyword, localeId])
+  @@index([shop, status])
+  @@index([shop, clusterId])
+}
+
+model PlpPage {
+  id                String   @id @default(cuid())
+  shop              String
+  keywordId         String   @unique
+  keyword           Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  pageTypeId        String
+  localeId          String
+  slug              String
+  status            String   @default("draft") // draft | needs_review | published | blocked
+  productCount      Int      @default(0)
+  productIds        String?  // JSON array of Shopify GIDs
+  manualProductIds  String?  // merchant overrides
+  intentJson        String
+  contentJson       String?  // validated AI output
+  metaTitle         String?
+  metaDescription   String?
+  canonicalLocaleId String?  // for hreflang consolidation
+  similarityScore   Float?
+  shopifyPageId     String?
+  shopifyPageUrl    String?
+  publishedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([shop, slug, localeId])
+  @@index([shop, status])
+  @@index([shop, localeId])
+}
+
+model KeywordCluster {
+  id           String   @id @default(cuid())
+  shop         String
+  canonicalKeyword String
+  memberKeywords   String // JSON array
+  localeId     String
+  createdAt    DateTime @default(now())
+
+  @@index([shop, localeId])
+}

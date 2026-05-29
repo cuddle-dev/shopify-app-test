@@ -1,0 +1,67 @@
+{
+  "id": "style-room",
+  "slug": "botanical-wallpaper-living-room",
+  "category": "intent-match",
+  "meta": {
+    "title": "Botanical Wallpaper for Living Rooms",
+    "description": "Wallpaper pages matching style x room intent"
+  },
+  "seo": {
+    "title_template": "{style} Wallpaper for {room}s | {brand}",
+    "description_template": "Shop {style} wallpaper for {room}s. {product_count}+ designs, {currency} pricing, expert tips for {market}.",
+    "keywords_template": ["{style} wallpaper {room}", "{style} {room} wallpaper ideas"]
+  },
+  "generation": {
+    "temperature": 0.5,
+    "section_count": 4,
+    "system_prompt": "You are an interior design and SEO expert. Return ONLY valid JSON matching the output schema. No markdown. The first 100 words of intro must declare the page topic unambiguously. FAQ answers must be standalone and citable. H1 must match the target keyword exactly. H2/H3 expand topical coverage without restating H1. Use market-specific terminology, measurements, and currency from LOCALE context.",
+    "user_prompt_template": "Create a PLP for {style} wallpaper in the {room}.\nTARGET KEYWORD: {keyword}\nINTENT: {intent_json}\nPRODUCTS: {products_json}\nLOCALE: {locale_json}\nBRAND TONE: {brand_tone}\nRELATED PLPS (for internal links): {related_plps_json}\nReturn JSON with h1, intro, sections (min 3), faq (min 4), schema_markup, meta_title (max 60 chars), meta_description (CTR-focused), product_alt_texts keyed by product id, internal_links."
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["h1", "intro", "sections", "faq", "schema_markup"],
+    "properties": {
+      "h1": { "type": "string" },
+      "intro": { "type": "string" },
+      "meta_title": { "type": "string", "maxLength": 60 },
+      "meta_description": { "type": "string" },
+      "sections": {
+        "type": "array",
+        "minItems": 3,
+        "items": {
+          "type": "object",
+          "required": ["heading", "body"],
+          "properties": {
+            "heading": { "type": "string" },
+            "body": { "type": "string" }
+          }
+        }
+      },
+      "faq": {
+        "type": "array",
+        "minItems": 4,
+        "items": {
+          "type": "object",
+          "required": ["question", "answer"],
+          "properties": {
+            "question": { "type": "string" },
+            "answer": { "type": "string" }
+          }
+        }
+      },
+      "schema_markup": { "type": "object" },
+      "product_alt_texts": { "type": "object" },
+      "internal_links": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "slug": { "type": "string" },
+            "anchor": { "type": "string" },
+            "localeId": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "id": "fr-be",
+  "language": "fr",
+  "region": "BE",
+  "currency": "EUR",
+  "currencySymbol": "€",
+  "measurementSystem": "metric",
+  "urlPrefix": "/fr-be",
+  "hreflang": "fr-BE",
+  "terminology": {
+    "wallpaper_adhesive": "colle pour papier peint",
+    "living_room": "salon",
+    "kids_room": "chambre d'enfant",
+    "bedroom": "chambre"
+  },
+  "promptContext": "Rédigez pour la Belgique francophone (Wallonie/Bruxelles). EUR, cm/m, français belge (légers écarts vs France). Ton local et accessible."
+}

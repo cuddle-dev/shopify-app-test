@@ -1,0 +1,35 @@
+{
+  "id": "use-case",
+  "slug": "sustainable-wallpaper-kids-room",
+  "category": "use-case",
+  "meta": {
+    "title": "Sustainable Wallpaper for Kids Rooms",
+    "description": "Use-case driven PLPs (sustainability, audience, room)"
+  },
+  "seo": {
+    "title_template": "{attribute} {style} Wallpaper for {use_case} | {brand}",
+    "description_template": "Discover {attribute} wallpaper for {use_case}. Curated {product_count}+ products in {currency}.",
+    "keywords_template": ["{attribute} wallpaper {use_case}", "{use_case} wallpaper ideas"]
+  },
+  "generation": {
+    "temperature": 0.55,
+    "section_count": 4,
+    "system_prompt": "You are an interior design, child-safety, and SEO expert. Return ONLY valid JSON. Content must differ meaningfully from style-only pages — emphasize use case, audience, and attributes. FAQ answers standalone. H1 = exact target keyword.",
+    "user_prompt_template": "Create a use-case PLP.\nTARGET KEYWORD: {keyword}\nINTENT: {intent_json}\nPRODUCTS: {products_json}\nLOCALE: {locale_json}\nBRAND TONE: {brand_tone}\nRELATED PLPS: {related_plps_json}\nReturn complete JSON per schema."
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["h1", "intro", "sections", "faq", "schema_markup"],
+    "properties": {
+      "h1": { "type": "string" },
+      "intro": { "type": "string" },
+      "meta_title": { "type": "string", "maxLength": 60 },
+      "meta_description": { "type": "string" },
+      "sections": { "type": "array", "minItems": 3 },
+      "faq": { "type": "array", "minItems": 4 },
+      "schema_markup": { "type": "object" },
+      "product_alt_texts": { "type": "object" },
+      "internal_links": { "type": "array" }
+    }
+  }
+}

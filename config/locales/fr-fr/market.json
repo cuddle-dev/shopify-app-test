@@ -1,0 +1,17 @@
+{
+  "id": "fr-fr",
+  "language": "fr",
+  "region": "FR",
+  "currency": "EUR",
+  "currencySymbol": "€",
+  "measurementSystem": "metric",
+  "urlPrefix": "/fr-fr",
+  "hreflang": "fr-FR",
+  "terminology": {
+    "wallpaper_adhesive": "colle à papier peint",
+    "living_room": "salon",
+    "kids_room": "chambre d'enfant",
+    "bedroom": "chambre"
+  },
+  "promptContext": "Rédigez pour des acheteurs en France. Prix en EUR, mesures en cm/m, français standard (France). Vocabulaire déco français."
+}

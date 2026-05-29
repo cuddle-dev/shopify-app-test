@@ -1,0 +1,17 @@
+{
+  "id": "en-us",
+  "language": "en",
+  "region": "US",
+  "currency": "USD",
+  "currencySymbol": "$",
+  "measurementSystem": "imperial",
+  "urlPrefix": "/en-us",
+  "hreflang": "en-US",
+  "terminology": {
+    "wallpaper_adhesive": "wallpaper paste",
+    "living_room": "living room",
+    "kids_room": "kids room",
+    "bedroom": "bedroom"
+  },
+  "promptContext": "Write for US buyers. Use feet and inches, USD pricing, American spelling and room naming. Prefer 'wallpaper paste' over 'adhesive'."
+}

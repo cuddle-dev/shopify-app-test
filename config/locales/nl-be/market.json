@@ -1,0 +1,17 @@
+{
+  "id": "nl-be",
+  "language": "nl",
+  "region": "BE",
+  "currency": "EUR",
+  "currencySymbol": "€",
+  "measurementSystem": "metric",
+  "urlPrefix": "/nl-be",
+  "hreflang": "nl-BE",
+  "terminology": {
+    "wallpaper_adhesive": "behanglijm",
+    "living_room": "woonkamer",
+    "kids_room": "kinderkamer",
+    "bedroom": "slaapkamer"
+  },
+  "promptContext": "Schrijf voor Vlaamse kopers in België. EUR, cm/m, Nederlands (België). Gebruik lokale termen zoals 'woonkamer' en 'kinderkamer'."
+}

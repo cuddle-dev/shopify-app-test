@@ -1,0 +1,17 @@
+{
+  "id": "de-de",
+  "language": "de",
+  "region": "DE",
+  "currency": "EUR",
+  "currencySymbol": "€",
+  "measurementSystem": "metric",
+  "urlPrefix": "/de-de",
+  "hreflang": "de-DE",
+  "terminology": {
+    "wallpaper_adhesive": "Tapetenkleister",
+    "living_room": "Wohnzimmer",
+    "kids_room": "Kinderzimmer",
+    "bedroom": "Schlafzimmer"
+  },
+  "promptContext": "Schreiben Sie für Käufer in Deutschland. EUR, cm/m, deutsches Standarddeutsch, Einrichtungsbegriffe aus dem DACH-Raum."
+}

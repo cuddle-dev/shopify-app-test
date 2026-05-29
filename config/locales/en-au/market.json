@@ -1,0 +1,17 @@
+{
+  "id": "en-au",
+  "language": "en",
+  "region": "AU",
+  "currency": "AUD",
+  "currencySymbol": "A$",
+  "measurementSystem": "metric",
+  "urlPrefix": "/en-au",
+  "hreflang": "en-AU",
+  "terminology": {
+    "wallpaper_adhesive": "wallpaper adhesive",
+    "living_room": "lounge",
+    "kids_room": "kids bedroom",
+    "bedroom": "bedroom"
+  },
+  "promptContext": "Write for Australian buyers. Use centimetres, AUD pricing, Australian English (colour, metre). Reference 'lounge' where Americans say living room."
+}

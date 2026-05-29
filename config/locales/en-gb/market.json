@@ -1,0 +1,17 @@
+{
+  "id": "en-gb",
+  "language": "en",
+  "region": "GB",
+  "currency": "GBP",
+  "currencySymbol": "£",
+  "measurementSystem": "metric",
+  "urlPrefix": "/en-gb",
+  "hreflang": "en-GB",
+  "terminology": {
+    "wallpaper_adhesive": "wallpaper paste",
+    "living_room": "sitting room",
+    "kids_room": "children's bedroom",
+    "bedroom": "bedroom"
+  },
+  "promptContext": "Write for UK buyers. Use metric measurements with occasional imperial familiarity, GBP pricing, British spelling and idioms."
+}
