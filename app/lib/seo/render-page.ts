@@ -88,8 +88,50 @@ export function renderPlpHtml(params: {
   ${alternates}
   ${noindex}
   ${jsonLd.map((g) => `<script type="application/ld+json">${JSON.stringify(g)}</script>`).join("\n")}
+  <style>
+    body.plp-page,
+    .plp-page-root {
+      box-sizing: border-box;
+      width: min(1600px, calc(100vw - 3rem)) !important;
+      max-width: min(1600px, calc(100vw - 3rem)) !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
+      padding: 0 1.5rem 3rem;
+    }
+    body.plp-page *,
+    body.plp-page *::before,
+    body.plp-page *::after,
+    .plp-page-root *,
+    .plp-page-root *::before,
+    .plp-page-root *::after {
+      box-sizing: border-box;
+    }
+    .plp-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      width: 100%;
+    }
+    .plp-product img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    @media (max-width: 768px) {
+      body.plp-page,
+      .plp-page-root {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 1rem 2rem;
+      }
+      .plp-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 <body class="plp-page" data-locale="${params.localeId}">
+  <div class="plp-page-root">
   <nav aria-label="Breadcrumb"><a href="/">Home</a> / ${escapeHtml(params.content.h1)}</nav>
   <header><h1>${escapeHtml(params.content.h1)}</h1></header>
   <div class="plp-intro">${escapeHtml(params.content.intro)}</div>
@@ -97,6 +139,7 @@ export function renderPlpHtml(params: {
   <section class="plp-products"><h2>Featured products</h2><div class="plp-grid">${productCards}</div></section>
   <section class="plp-faq"><h2>FAQ</h2>${faq}</section>
   ${internalLinks ? `<nav class="plp-related-nav"><h2>Related guides</h2>${internalLinks}</nav>` : ""}
+  </div>
 </body>
 </html>`;
 }
