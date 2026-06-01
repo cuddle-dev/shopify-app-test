@@ -265,3 +265,160 @@ npm run setup      # prisma migrate deploy
 ## License
 
 Private — client evaluation build.
+
+
+## Q&A (detailed answers)
+
+### How do you prevent thin content? What happens when fewer than 6 products match?
+
+**Prevention has three layers:**
+
+**A. Hard product minimum (default 6)**  
+After matching, if fewer than six catalog products score above zero for that intent, the PLP status is set to **`needs_review`**. Publish is **blocked** in code (`publishPlp` throws; the dashboard won’t publish). The merchant must improve the catalog, pick a better keyword, or lower the threshold in Settings (not recommended for production SEO).
+
+**B. Match quality, not just count**  
+Matching in `matcher.ts` weights room/use case, style, attributes, and color against title, description, tags, and collections. For kids-room intent, products tagged “dark”, “moody”, “gothic”, etc. are **penalized** so weak thematic fits don’t count as valid matches.
+
+**C. Content depth gate**  
+Even with enough products, generated JSON must pass schema validation: minimum three sections, four FAQs, H1, intro, structured markup — with retries up to three times. Invalid output never publishes.
+
+**When fewer than 6 products:**  
+Generation can still run so the merchant can **review** intent and copy, but the page stays **`needs_review`**, HTML gets **`noindex`**, and it does not go live until there are enough matches (or they regenerate after adding products — the DB count updates on re-approve, not automatically when products are added later).
+
+**One-liner:**  
+*“We don’t publish listing pages that can’t support six relevant products; they stay in review with noindex until the catalog or keyword is fixed.”*
+
+---
+
+### How does your prompt strategy differentiate pages targeting adjacent queries?
+
+Adjacent queries (e.g. “botanical wallpaper living room” vs “botanical wallpaper bedroom”) are differentiated by **what goes into the prompt**, not by swapping one word in a static template.
+
+- **Structured intent** — Each keyword becomes JSON (style, room, color, attribute, use case, audience), injected as `{intent_json}`.
+- **Page-type configs** — `style-room` vs `use-case` have different system prompts and templates.
+- **Real product subset** — `{products_json}` is the actual matched SKUs for that query.
+- **Locale context** — `{locale_json}` carries currency, measurement system, and market terminology (not just translation).
+- **Related PLPs in the prompt** — `{related_plps_json}` tells the model what sibling pages exist.
+- **Cannibalization block** — If intent is too similar to an already-published PLP (default ≥85% similarity: field overlap + token Jaccard), status is **`blocked`**.
+- **Output rules** — H1 = exact keyword; intro declares topic in first 100 words; H2/H3 expand without repeating H1; FAQs must be **standalone** (citable without page context).
+
+**One-liner:**  
+*“Adjacent pages get different intent objects, different products, different page-type prompts, and a similarity guard — not the same template with one word changed.”*
+
+---
+
+### How do related PLPs link to each other internally?
+
+**At generation time** (`internal-links.ts`):
+
+1. Load all **published** PLPs in the **same locale**.
+2. Compare **parsed intent** fields (shared style, room, cross style↔room pairs, use case).
+3. Score and take top **6** neighbors.
+4. Pass them into the LLM prompt and store in `internal_links` on the content JSON.
+5. **Rendered HTML** adds a “Related guides” nav with links like `{localePrefix}/pages/plp/{slug}` and anchor text = target keyword.
+
+Example: “botanical wallpaper living room” links toward “botanical wallpaper bedroom” and “living room wallpaper ideas” when those published pages share intent attributes.
+
+**Note:** Links are computed from **published** PLPs at generation time. New publishes don’t automatically rewrite old pages yet — relink-on-publish is a v2 improvement.
+
+**One-liner:**  
+*“We score intent similarity across published pages in the same market and inject cross-links when the page is generated, so PageRank flows between related intents.”*
+
+---
+
+### Why did you choose your publishing mechanism?
+
+**Chosen: Shopify Online Store Pages API** (GraphQL `pageCreate` / `pageUpdate`).
+
+| Reason | Explanation |
+|--------|-------------|
+| **Plug-and-play** | Works on any store after install; no theme code changes required. |
+| **Full HTML control** | One body field can carry JSON-LD, hreflang, canonical, noindex, FAQ, product grid. |
+| **Merchant familiarity** | Pages appear under **Online Store → Pages** like normal content. |
+| **Fast MVP** | Metaobjects or theme app extensions need more storefront integration work. |
+
+**Tradeoffs:**
+
+- Styling follows the theme’s default page template (less “on-brand” than a custom section).
+- Not as structured for headless reuse as Metaobjects.
+- Smart Collections alone don’t give long-form SEO copy.
+
+**Alternatives considered:** Metaobjects (better structure, heavier integration); Collections (wrong fit for editorial PLPs).
+
+**One-liner:**  
+*“Pages API was the fastest path to a real, indexable URL on any Shopify store with full SEO markup in the HTML body.”*
+
+---
+
+### How does adding a new locale work — what does the merchant actually do?
+
+**Two different things:**
+
+#### A. Markets already in the app (en-us, en-au, fr-fr, fr-be, nl-be, de-de, …)
+
+**What the merchant does today:**
+
+1. On **Keywords**, pick **Locale** in the dropdown (e.g. `fr-be`).
+2. Auto-discover, import CSV, or paste keywords **for that market**.
+3. Approve & generate → PLP is created with that `localeId`.
+4. Publish → page URL uses that market’s prefix (e.g. `/fr-be/...`), prompts use local terminology, currency, measurements, etc.
+
+They do **not** edit JSON config files — that is an engineering/deploy step.
+
+#### B. Brand-new country (not in config yet)
+
+**Not a merchant self-serve flow in v1.** Engineering adds `config/locales/{id}/market.json` and registers it in `config/locales/index.ts`, then redeploys. The new locale then appears in the Keywords dropdown.
+
+**hreflang:** Published HTML references alternates for all configured locales; optional `canonicalLocaleId` for consolidation across language variants.
+
+**One-liner:**  
+*“Merchants choose the market per keyword in the app; launching a wholly new country is a config deploy for us today, not a button in admin — that’s a sensible v2 feature.”*
+
+---
+
+### How is content optimized for AI retrieval, not just Google?
+
+**On-page structure (LLM + schema):**
+
+- Intro must state the topic clearly in the **first 100 words** (system prompt).
+- **FAQ answers are standalone** — written so AI interfaces can cite them without surrounding context.
+- **JSON-LD**: CollectionPage, ItemList (products), FAQPage, BreadcrumbList.
+
+**AI presence files (beyond sitemap.xml):**
+
+| File | Purpose |
+|------|---------|
+| **`llms.txt`** | Plain-language index: store summary, collections, each published PLP with keyword, slug, locale, intent summary, product count, URL. |
+| **`sitemap-ai.xml`** | Curated XML with AI metadata: primary keyword, intent summary, product count, locale — only published PLPs. |
+
+Served at `/llms.txt?shop=...` and `/sitemap-ai.xml?shop=...` (mapping to store root via app proxy/redirect is a deploy step).
+
+**Policy line in llms.txt:** Only published PLPs are listed — drafts and thin pages excluded.
+
+**One-liner:**  
+*“We optimize for citation-ready FAQs and topic-clear intros, plus machine-readable indexes — llms.txt and sitemap-ai.xml — not only Google’s HTML crawler.”*
+
+---
+
+### Known gaps and what you’d build next
+
+| Gap | Today | Next |
+|-----|--------|------|
+| **Long LLM in HTTP request** | Approve can take 30–90s; dev tunnels may timeout | Background jobs (queue), progress UI |
+| **SQLite** | Fine for dev | PostgreSQL on Railway |
+| **Stale product count** | Preview shows 8 products but DB may still say `needs_review` until regenerate | “Refresh matches” button |
+| **Manual product overrides** | Field exists in DB | UI on PLP detail |
+| **Internal links** | Fixed at generation time | Relink all affected PLPs when a new sibling publishes |
+| **Matching** | Rule-based + token scoring | Embeddings + reranker for catalog |
+| **Auto-discovery** | Biased toward wallpaper-style n-grams | Domain-agnostic discovery |
+| **Storefront presentation** | Pages API HTML | Theme app extension or metaobjects |
+| **llms.txt at store root** | App URL + query param | Shopify app proxy |
+| **New locale** | Developer adds config | Merchant “Add market” in Settings |
+| **Cannibalization** | Jaccard + field overlap | Embedding similarity on full intent |
+| **Dockerfile** | From Shopify template | Optional; Railway can use Nixpacks |
+
+**Prioritized v2:**  
+1) Job queue for generation, 2) Postgres, 3) relink-on-publish, 4) embedding-based matching + similarity, 5) theme/metaobject publishing for brand control.
+
+**Closing line:**  
+*“V1 proves the full pipeline on a dev store; v2 is about scale, resilience, and merchant self-service for markets and product overrides.”*

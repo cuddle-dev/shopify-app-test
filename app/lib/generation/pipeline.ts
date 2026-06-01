@@ -48,19 +48,28 @@ export async function generatePlpContent(
     related_plps_json: JSON.stringify(input.relatedPlps ?? []),
   };
 
-  const userPrompt = fillTemplate(pageType.generation.user_prompt_template, vars);
+  const userPrompt =
+    fillTemplate(pageType.generation.user_prompt_template, vars) +
+    `\n\nOUTPUT SCHEMA (use these exact English property names; only string values should be in ${locale.language}-${locale.region}):\n` +
+    `${JSON.stringify(pageType.output_schema, null, 2)}`;
+
+  const retryHint =
+    "JSON property names must match the output schema exactly (English keys). Only content text may be localized.";
 
   let lastErrors: string[] = [];
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     const raw = await completeJson(
       [
-        { role: "system", content: pageType.generation.system_prompt },
+        {
+          role: "system",
+          content: `${pageType.generation.system_prompt} JSON keys must stay in English as defined in the output schema; localize only string values.`,
+        },
         {
           role: "user",
           content:
             attempt === 0
               ? userPrompt
-              : `${userPrompt}\n\nPrevious response invalid: ${lastErrors.join("; ")}. Fix and return valid JSON only.`,
+              : `${userPrompt}\n\nPrevious response invalid: ${lastErrors.join("; ")}. ${retryHint} Fix and return valid JSON only.`,
         },
       ],
       { temperature: pageType.generation.temperature },

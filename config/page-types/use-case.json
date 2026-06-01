@@ -25,8 +25,30 @@
       "intro": { "type": "string" },
       "meta_title": { "type": "string", "maxLength": 60 },
       "meta_description": { "type": "string" },
-      "sections": { "type": "array", "minItems": 3 },
-      "faq": { "type": "array", "minItems": 4 },
+      "sections": {
+        "type": "array",
+        "minItems": 3,
+        "items": {
+          "type": "object",
+          "required": ["heading", "body"],
+          "properties": {
+            "heading": { "type": "string" },
+            "body": { "type": "string" }
+          }
+        }
+      },
+      "faq": {
+        "type": "array",
+        "minItems": 4,
+        "items": {
+          "type": "object",
+          "required": ["question", "answer"],
+          "properties": {
+            "question": { "type": "string" },
+            "answer": { "type": "string" }
+          }
+        }
+      },
       "schema_markup": { "type": "object" },
       "product_alt_texts": { "type": "object" },
       "internal_links": { "type": "array" }
