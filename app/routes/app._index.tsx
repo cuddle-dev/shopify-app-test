@@ -38,7 +38,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const intent = form.get("intent");
 
   if (intent === "publish" && form.get("plpId")) {
-    await publishPlp(session.shop, String(form.get("plpId")), admin, session.shop);
+    await publishPlp(
+      session.shop,
+      String(form.get("plpId")),
+      admin,
+      session.shop,
+    );
     return { ok: true };
   }
   return { ok: false };
@@ -70,9 +75,15 @@ export default function Dashboard() {
       <fetcher.Form method="post" key={p.id}>
         <input type="hidden" name="intent" value="publish" />
         <input type="hidden" name="plpId" value={p.id} />
-        <Button submit size="slim" loading={fetcher.state !== "idle"}>
-          Publish
-        </Button>
+
+        <InlineStack gap="100">
+          <Button url={`/app/plp/${p.id}`} size="slim">
+            View
+          </Button>
+          <Button submit size="slim" loading={fetcher.state !== "idle"}>
+            Publish
+          </Button>
+        </InlineStack>
       </fetcher.Form>
     ) : (
       <Button url={`/app/plp/${p.id}`} size="slim">
@@ -105,8 +116,22 @@ export default function Dashboard() {
           <Layout.Section>
             <Card>
               <DataTable
-                columnContentTypes={["text", "text", "numeric", "text", "text", "text"]}
-                headings={["Keyword", "Locale", "Products", "Status", "Slug", "Actions"]}
+                columnContentTypes={[
+                  "text",
+                  "text",
+                  "numeric",
+                  "text",
+                  "text",
+                  "text",
+                ]}
+                headings={[
+                  "Keyword",
+                  "Locale",
+                  "Products",
+                  "Status",
+                  "Slug",
+                  "Actions",
+                ]}
                 rows={rows}
               />
             </Card>

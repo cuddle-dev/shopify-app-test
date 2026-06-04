@@ -98,6 +98,7 @@ export default function KeywordsPage() {
   const isApproving =
     approveFetcher.state !== "idle" &&
     approveFetcher.formData?.get("intent") === "approve";
+  const loadingKeywordId = approveFetcher.formData?.get("keywordId") ?? null;
   const [localeId, setLocaleId] = useState("en-us");
   const [paste, setPaste] = useState("");
   const [csv, setCsv] = useState("");
@@ -117,7 +118,7 @@ export default function KeywordsPage() {
           <ApproveForm method="post">
             <input type="hidden" name="intent" value="approve" />
             <input type="hidden" name="keywordId" value={k.id} />
-            <Button submit size="slim" loading={isApproving}>
+            <Button submit size="slim" loading={isApproving && loadingKeywordId === k.id} disabled={isApproving}>
               Approve & generate
             </Button>
           </ApproveForm>
