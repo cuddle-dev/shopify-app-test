@@ -1,9 +1,6 @@
 import type { CatalogProduct, MatchedProduct, ParsedIntent } from "../types";
-
-const NEGATIVE_SIGNALS: Record<string, string[]> = {
-  "kids room": ["dark", "moody", "gothic", "horror", "bar", "nightclub"],
-  nursery: ["dark", "moody", "gothic", "horror"],
-};
+import type { FacetConfig } from "../category/types";
+import { getIntentFacet } from "../category/intent";
 
 function haystack(product: CatalogProduct): string {
   return [
@@ -18,22 +15,19 @@ function haystack(product: CatalogProduct): string {
     .toLowerCase();
 }
 
-function scoreProduct(product: CatalogProduct, intent: ParsedIntent): number {
+function scoreProduct(
+  product: CatalogProduct,
+  intent: ParsedIntent,
+  facetConfig: FacetConfig,
+): number {
   const text = haystack(product);
   let score = 0;
 
-  const boosts: Array<[string | undefined, number]> = [
-    [intent.style, 3],
-    [intent.room, 4],
-    [intent.use_case, 4],
-    [intent.color, 2],
-    [intent.attribute, 3],
-    [intent.audience, 1],
-  ];
-
-  for (const [term, weight] of boosts) {
-    if (!term) continue;
-    if (text.includes(term.toLowerCase())) score += weight;
+  for (const facet of facetConfig.facets) {
+    const value = getIntentFacet(intent, facet.key);
+    if (!value) continue;
+    const term = value.toLowerCase();
+    if (text.includes(term)) score += facet.matchWeight;
     for (const token of term.split(/\s+/)) {
       if (token.length > 2 && text.includes(token)) score += 0.5;
     }
@@ -43,11 +37,13 @@ function scoreProduct(product: CatalogProduct, intent: ParsedIntent): number {
     if (text.includes(token)) score += 0.25;
   }
 
-  const negatives = intent.use_case
-    ? NEGATIVE_SIGNALS[intent.use_case] ?? []
-    : [];
-  for (const bad of negatives) {
-    if (text.includes(bad)) score -= 5;
+  for (const neg of facetConfig.negativeSignals) {
+    const whenVal = getIntentFacet(intent, neg.whenFacet);
+    if (whenVal && whenVal.toLowerCase() === neg.value.toLowerCase()) {
+      for (const bad of neg.penalizeTerms) {
+        if (text.includes(bad)) score -= 5;
+      }
+    }
   }
 
   return Math.max(0, score);
@@ -56,6 +52,7 @@ function scoreProduct(product: CatalogProduct, intent: ParsedIntent): number {
 export function matchProducts(
   catalog: CatalogProduct[],
   intent: ParsedIntent,
+  facetConfig: FacetConfig,
   options?: { minCount?: number; limit?: number; manualIds?: string[] },
 ): { products: MatchedProduct[]; belowThreshold: boolean } {
   const minCount = options?.minCount ?? Number(process.env.MIN_PRODUCT_COUNT ?? 6);
@@ -71,7 +68,7 @@ export function matchProducts(
       collections: p.collections,
       imageUrl: p.imageUrl,
       price: p.price,
-      score: scoreProduct(p, intent),
+      score: scoreProduct(p, intent, facetConfig),
     }))
     .filter((p) => p.score > 0)
     .sort((a, b) => b.score - a.score);

@@ -1,5 +1,11 @@
 export type ParsedIntent = {
   raw: string;
+  categoryId: string;
+  categorySlug: string;
+  facets: Record<string, string>;
+  tokens: string[];
+  locale_terms?: Record<string, string>;
+  /** @deprecated Legacy mirrors — prefer facets */
   color?: string;
   style?: string;
   attribute?: string;
@@ -7,8 +13,10 @@ export type ParsedIntent = {
   room?: string;
   audience?: string;
   material?: string;
-  locale_terms?: Record<string, string>;
-  tokens: string[];
+  product_type?: string;
+  concern?: string;
+  skin_type?: string;
+  finish?: string;
 };
 
 export type PlpStatus = "draft" | "needs_review" | "published" | "blocked";

@@ -18,8 +18,9 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { fetchShopCatalog } from "../lib/catalog/fetch-products.server";
 import { matchProducts } from "../lib/matching/matcher";
-import type { ParsedIntent } from "../lib/types";
 import { getOrCreateShopSettings, publishPlp, refreshPlpMatches } from "../lib/plp/service.server";
+import { normalizeParsedIntent } from "../lib/category/intent";
+import { resolveCategoryForIntent, getCatalogForCategory } from "../lib/category/service.server";
 
 export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);
@@ -29,17 +30,29 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const plp = await prisma.plpPage.findFirstOrThrow({
     where: { id: params.id, shop: session.shop },
-    include: { keyword: true },
+    include: { keyword: true, category: true },
   });
-  const intent = JSON.parse(plp.intentJson) as ParsedIntent;
-  const catalog = await fetchShopCatalog(admin);
+  const intent = normalizeParsedIntent(JSON.parse(plp.intentJson));
+  const category = await resolveCategoryForIntent(
+    session.shop,
+    plp.categoryId ?? intent.categoryId,
+  );
+  const fullCatalog = await fetchShopCatalog(admin);
+  const catalog = await getCatalogForCategory(session.shop, category, fullCatalog);
   const manualIds = plp.manualProductIds
     ? (JSON.parse(plp.manualProductIds) as string[])
     : undefined;
-  const { products } = matchProducts(catalog, intent, { manualIds });
+  const { products } = matchProducts(catalog, intent, category.facetConfig, { manualIds });
   const content = plp.contentJson ? JSON.parse(plp.contentJson) : null;
   const settings = await getOrCreateShopSettings(session.shop);
-  return { plp, products, content, intent, minProductCount: settings.minProductCount };
+  return {
+    plp,
+    products,
+    content,
+    intent,
+    categoryName: plp.category?.name ?? category.name,
+    minProductCount: settings.minProductCount,
+  };
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -72,7 +85,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 };
 
 export default function PlpDetailPage() {
-  const { plp, products, content, intent, minProductCount } = useLoaderData<typeof loader>();
+  const { plp, products, content, intent, categoryName, minProductCount } =
+    useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const isSubmitting = nav.state !== "idle";
@@ -152,7 +166,7 @@ export default function PlpDetailPage() {
             <Card>
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">
-                  Parsed intent
+                  Parsed intent ({categoryName})
                 </Text>
                 <Box padding="300" background="bg-surface-secondary" borderRadius="200">
                   <pre style={{ margin: 0, fontSize: 12 }}>{JSON.stringify(intent, null, 2)}</pre>

@@ -12,9 +12,9 @@ import {
   Text,
   DataTable,
   Banner,
-  InlineStack,
+  Box,
 } from "@shopify/polaris";
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -24,16 +24,20 @@ import {
   importKeywords,
   approveAndGeneratePlp,
 } from "../lib/plp/service.server";
+import { listActiveCategories } from "../lib/category/seed";
+import { hasActiveCategories } from "../lib/category/service.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  const categories = await listActiveCategories(session.shop);
+  const categoriesReady = await hasActiveCategories(session.shop);
   const keywords = await prisma.keyword.findMany({
     where: { shop: session.shop },
     orderBy: { createdAt: "desc" },
     take: 200,
-    include: { plp: true },
+    include: { plp: true, category: true },
   });
-  return { keywords, locales: listLocaleIds() };
+  return { keywords, locales: listLocaleIds(), categories, categoriesReady };
 };
 
 export const headers: HeadersFunction = (headersArgs) => {
@@ -65,10 +69,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (intent === "approve" && form.get("keywordId")) {
     try {
+      const categoryId = form.get("categoryId")
+        ? String(form.get("categoryId"))
+        : undefined;
       const { plp } = await approveAndGeneratePlp(
         session.shop,
         String(form.get("keywordId")),
         admin,
+        { categoryId },
       );
       // Redirect avoids revalidating this page after a long LLM request (tunnel timeout → "Failed to fetch")
       return redirect(`/app/plp/${plp.id}`);
@@ -89,8 +97,62 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   return { ok: false, message: "Unknown action" };
 };
 
+function KeywordApproveActions({
+  keywordId,
+  categoryOptions,
+  categoryValue,
+  onCategoryChange,
+  isApproving,
+  isLoading,
+  ApproveForm,
+}: {
+  keywordId: string;
+  categoryOptions: { label: string; value: string }[];
+  categoryValue: string;
+  onCategoryChange: (keywordId: string, value: string) => void;
+  isApproving: boolean;
+  isLoading: boolean;
+  ApproveForm: ReturnType<typeof useFetcher<typeof action>>["Form"];
+}) {
+  return (
+    <Box minWidth="180px">
+      <BlockStack gap="200">
+        <Select
+          label="Category"
+          options={categoryOptions}
+          value={categoryValue}
+          onChange={(value) => onCategoryChange(keywordId, value)}
+          disabled={isApproving}
+        />
+        <ApproveForm method="post">
+          <input type="hidden" name="intent" value="approve" />
+          <input type="hidden" name="keywordId" value={keywordId} />
+          <input type="hidden" name="categoryId" value={categoryValue} />
+          <Button submit size="slim" loading={isLoading} disabled={isApproving} fullWidth>
+            Approve & generate
+          </Button>
+        </ApproveForm>
+        <Form method="post">
+          <input type="hidden" name="intent" value="reject" />
+          <input type="hidden" name="keywordId" value={keywordId} />
+          <Button submit size="slim" tone="critical" disabled={isApproving} fullWidth>
+            Reject
+          </Button>
+        </Form>
+      </BlockStack>
+    </Box>
+  );
+}
+
 export default function KeywordsPage() {
-  const { keywords, locales } = useLoaderData<typeof loader>();
+  const { keywords, locales, categories, categoriesReady } = useLoaderData<typeof loader>();
+  const categoryOptions = useMemo(
+    () => [
+      { label: "Auto-detect", value: "" },
+      ...categories.map((c) => ({ label: c.name, value: c.id })),
+    ],
+    [categories],
+  );
   const actionData = useActionData<typeof action>();
   const approveFetcher = useFetcher<typeof action>();
   const ApproveForm = approveFetcher.Form;
@@ -102,34 +164,42 @@ export default function KeywordsPage() {
   const [localeId, setLocaleId] = useState("en-us");
   const [paste, setPaste] = useState("");
   const [csv, setCsv] = useState("");
+  const [categoryByKeywordId, setCategoryByKeywordId] = useState<Record<string, string>>({});
+
+  const getCategoryValue = useCallback(
+    (keywordId: string, defaultCategoryId: string | null) =>
+      categoryByKeywordId[keywordId] ?? defaultCategoryId ?? "",
+    [categoryByKeywordId],
+  );
+
+  const handleCategoryChange = useCallback((keywordId: string, value: string) => {
+    setCategoryByKeywordId((prev) => ({ ...prev, [keywordId]: value }));
+  }, []);
 
   const localeOptions = locales.map((l) => ({ label: l, value: l }));
 
   const rows = keywords.map((k) => {
     const intent = k.parsedIntent ? JSON.parse(k.parsedIntent) : null;
+    const categoryLabel =
+      k.category?.name ?? (intent?.categorySlug ? String(intent.categorySlug) : "—");
     return [
       k.rawKeyword,
       k.localeId,
+      categoryLabel,
       k.source,
       k.status,
-      intent ? JSON.stringify(intent) : "—",
+      intent ? JSON.stringify(intent.facets ?? intent) : "—",
       k.status === "pending" ? (
-        <InlineStack gap="200" key={k.id}>
-          <ApproveForm method="post">
-            <input type="hidden" name="intent" value="approve" />
-            <input type="hidden" name="keywordId" value={k.id} />
-            <Button submit size="slim" loading={isApproving && loadingKeywordId === k.id} disabled={isApproving}>
-              Approve & generate
-            </Button>
-          </ApproveForm>
-          <Form method="post">
-            <input type="hidden" name="intent" value="reject" />
-            <input type="hidden" name="keywordId" value={k.id} />
-            <Button submit size="slim" tone="critical">
-              Reject
-            </Button>
-          </Form>
-        </InlineStack>
+        <KeywordApproveActions
+          key={k.id}
+          keywordId={k.id}
+          categoryOptions={categoryOptions}
+          categoryValue={getCategoryValue(k.id, k.categoryId)}
+          onCategoryChange={handleCategoryChange}
+          isApproving={isApproving}
+          isLoading={isApproving && loadingKeywordId === k.id}
+          ApproveForm={ApproveForm}
+        />
       ) : k.plp ? (
         <Button url={`/app/plp/${k.plp.id}`} size="slim">
           View PLP
@@ -149,6 +219,11 @@ export default function KeywordsPage() {
         )}
         {approveFetcher.data && "message" in approveFetcher.data && !approveFetcher.data.ok && (
           <Banner tone="critical">{approveFetcher.data.message}</Banner>
+        )}
+        {!categoriesReady && (
+          <Banner tone="warning">
+            Run <strong>Catalog analysis</strong> on the Categories page before approving keywords.
+          </Banner>
         )}
         {isApproving && (
           <Banner tone="info">
@@ -183,8 +258,16 @@ export default function KeywordsPage() {
           <Layout.Section>
             <Card>
               <DataTable
-                columnContentTypes={["text", "text", "text", "text", "text", "text"]}
-                headings={["Keyword", "Locale", "Source", "Status", "Parsed intent", "Actions"]}
+                columnContentTypes={["text", "text", "text", "text", "text", "text", "text"]}
+                headings={[
+                  "Keyword",
+                  "Locale",
+                  "Category",
+                  "Source",
+                  "Status",
+                  "Parsed intent",
+                  "Actions",
+                ]}
                 rows={rows}
               />
             </Card>

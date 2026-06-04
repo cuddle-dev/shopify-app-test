@@ -28,75 +28,117 @@ model Session {
 }
 
 model ShopSettings {
-  id              String   @id @default(cuid())
-  shop            String   @unique
-  llmProvider     String   @default("anthropic")
-  llmModel        String?
-  defaultLocales  String   @default("en-us")
-  brandTone       String   @default("premium, knowledgeable, warm")
-  competitorUrls  String?
-  minProductCount Int      @default(6)
-  similarityThreshold Float @default(0.85)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                  String    @id @default(cuid())
+  shop                String    @unique
+  llmProvider         String    @default("anthropic")
+  llmModel            String?
+  defaultLocales      String    @default("en-us")
+  brandTone           String    @default("premium, knowledgeable, warm")
+  competitorUrls      String?
+  minProductCount     Int       @default(6)
+  similarityThreshold Float     @default(0.85)
+  defaultPageTypeId   String    @default("style-room")
+  catalogAnalyzedAt   DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 }
 
-model Keyword {
+model ShopCategory {
   id            String   @id @default(cuid())
   shop          String
-  rawKeyword    String
-  source        String   // auto | csv | manual
-  clusterId     String?
-  parsedIntent  String?  // JSON
-  status        String   @default("pending") // pending | approved | rejected
-  pageTypeId    String?
-  localeId      String   @default("en-us")
+  slug          String
+  name          String
+  status        String   @default("active") // active | draft
+  source        String   @default("ai_generated") // ai_generated | manual
+  facetConfig   String // JSON FacetConfig
+  promptConfig  String // JSON CategoryPromptConfig
+  productFilter String? // JSON optional collection/tag rules
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  plp           PlpPage?
+  products ProductCategory[]
+  keywords Keyword[]
+  plpPages PlpPage[]
+
+  @@unique([shop, slug])
+  @@index([shop, status])
+}
+
+model ProductCategory {
+  id         String       @id @default(cuid())
+  shop       String
+  productId  String
+  categoryId String
+  isPrimary  Boolean      @default(true)
+  category   ShopCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([shop, productId, categoryId])
+  @@index([shop, categoryId])
+  @@index([shop, productId])
+}
+
+model Keyword {
+  id           String        @id @default(cuid())
+  shop         String
+  rawKeyword   String
+  source       String // auto | csv | manual
+  clusterId    String?
+  parsedIntent String? // JSON ParsedIntent
+  status       String        @default("pending") // pending | approved | rejected
+  pageTypeId   String?
+  categoryId   String?
+  category     ShopCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  localeId     String        @default("en-us")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  plp PlpPage? @relation("KeywordToPlp")
 
   @@unique([shop, rawKeyword, localeId])
   @@index([shop, status])
   @@index([shop, clusterId])
+  @@index([shop, categoryId])
 }
 
 model PlpPage {
-  id                String   @id @default(cuid())
+  id                String        @id @default(cuid())
   shop              String
-  keywordId         String   @unique
-  keyword           Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  keywordId         String        @unique
+  keyword           Keyword       @relation("KeywordToPlp", fields: [keywordId], references: [id], onDelete: Cascade)
   pageTypeId        String
+  categoryId        String?
+  category          ShopCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   localeId          String
   slug              String
-  status            String   @default("draft") // draft | needs_review | published | blocked
-  productCount      Int      @default(0)
-  productIds        String?  // JSON array of Shopify GIDs
-  manualProductIds  String?  // merchant overrides
+  status            String        @default("draft") // draft | needs_review | published | blocked
+  productCount      Int           @default(0)
+  productIds        String? // JSON array of Shopify GIDs
+  manualProductIds  String? // merchant overrides
   intentJson        String
-  contentJson       String?  // validated AI output
+  contentJson       String? // validated AI output
   metaTitle         String?
   metaDescription   String?
-  canonicalLocaleId String?  // for hreflang consolidation
+  canonicalLocaleId String? // for hreflang consolidation
   similarityScore   Float?
   shopifyPageId     String?
   shopifyPageUrl    String?
   publishedAt       DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   @@unique([shop, slug, localeId])
   @@index([shop, status])
   @@index([shop, localeId])
+  @@index([shop, categoryId])
 }
 
 model KeywordCluster {
-  id           String   @id @default(cuid())
-  shop         String
+  id               String   @id @default(cuid())
+  shop             String
   canonicalKeyword String
   memberKeywords   String // JSON array
-  localeId     String
-  createdAt    DateTime @default(now())
+  localeId         String
+  createdAt        DateTime @default(now())
 
   @@index([shop, localeId])
 }

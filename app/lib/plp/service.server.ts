@@ -13,6 +13,10 @@ import { generateLlmsTxt } from "../ai-presence/llms-txt";
 import { generateSitemapAiXml } from "../ai-presence/sitemap-ai";
 import type { ParsedIntent } from "../types";
 import { listLocaleIds } from "../../../config/locales";
+import { hasActiveCategories } from "../category/service.server";
+import { getCatalogForCategory, resolveCategoryForIntent } from "../category/service.server";
+import { getCannibalizationKeys, normalizeParsedIntent } from "../category/intent";
+import { listActiveCategories } from "../category/seed";
 
 type AdminGraphql = {
   graphql: (query: string, options?: { variables?: Record<string, unknown> }) => Promise<Response>;
@@ -35,9 +39,27 @@ export async function getOrCreateShopSettings(shop: string) {
 }
 
 export async function runAutoDiscovery(shop: string, admin: AdminGraphql, localeId: string) {
+  if (!(await hasActiveCategories(shop))) {
+    throw new Error("No categories configured. Run Catalog analysis on the Categories page first.");
+  }
   const catalog = await fetchShopCatalog(admin);
-  const discovered = discoverKeywordsFromCatalog(catalog, localeId);
-  const clusters = clusterKeywords(discovered.map((d) => d.keyword));
+  const categories = await listActiveCategories(shop);
+  const allDiscovered: Array<{ keyword: string; source: "auto"; score: number; categoryId: string }> =
+    [];
+
+  for (const category of categories) {
+    const scoped = await getCatalogForCategory(shop, category, catalog);
+    if (scoped.length === 0) continue;
+    const discovered = discoverKeywordsFromCatalog(scoped, category.facetConfig);
+    for (const d of discovered) {
+      allDiscovered.push({ ...d, categoryId: category.id });
+    }
+  }
+
+  const clusters = clusterKeywords(allDiscovered.map((d) => d.keyword));
+  const keywordToCategory = new Map(
+    allDiscovered.map((d) => [d.keyword.toLowerCase(), d.categoryId]),
+  );
 
   for (const cluster of clusters) {
     await prisma.keywordCluster.upsert({
@@ -55,6 +77,7 @@ export async function runAutoDiscovery(shop: string, admin: AdminGraphql, locale
     });
 
     const keyword = cluster.canonicalKeyword;
+    const categoryId = keywordToCategory.get(keyword.toLowerCase()) ?? null;
     await prisma.keyword.upsert({
       where: { shop_rawKeyword_localeId: { shop, rawKeyword: keyword, localeId } },
       create: {
@@ -64,12 +87,13 @@ export async function runAutoDiscovery(shop: string, admin: AdminGraphql, locale
         clusterId: cluster.clusterId,
         localeId,
         status: "pending",
+        categoryId,
       },
-      update: { clusterId: cluster.clusterId },
+      update: { clusterId: cluster.clusterId, categoryId: categoryId ?? undefined },
     });
   }
 
-  return { discovered: discovered.length, clusters: clusters.length };
+  return { discovered: allDiscovered.length, clusters: clusters.length };
 }
 
 export async function importKeywords(
@@ -109,7 +133,7 @@ export async function approveAndGeneratePlp(
   shop: string,
   keywordId: string,
   admin: AdminGraphql,
-  options?: { pageTypeId?: string; manualProductIds?: string[] },
+  options?: { pageTypeId?: string; manualProductIds?: string[]; categoryId?: string },
 ) {
   const settings = await getOrCreateShopSettings(shop);
   const keyword = await prisma.keyword.findFirstOrThrow({
@@ -117,37 +141,64 @@ export async function approveAndGeneratePlp(
     include: { plp: true },
   });
 
-  const intent = await parseKeywordIntent(keyword.rawKeyword, keyword.localeId);
+  const categoryId = options?.categoryId ?? keyword.categoryId ?? undefined;
+  const intent = await parseKeywordIntent(keyword.rawKeyword, keyword.localeId, {
+    shop,
+    categoryId,
+  });
+
+  const category = await resolveCategoryForIntent(shop, intent.categoryId);
+
   await prisma.keyword.update({
     where: { id: keyword.id },
-    data: { parsedIntent: JSON.stringify(intent), status: "approved" },
+    data: {
+      parsedIntent: JSON.stringify(intent),
+      status: "approved",
+      categoryId: category.id,
+    },
   });
 
   const published = await prisma.plpPage.findMany({
     where: { shop, status: "published" },
-    select: { intentJson: true },
+    select: { intentJson: true, categoryId: true },
   });
-  const existingIntents = published.map((p) => JSON.parse(p.intentJson) as ParsedIntent);
-  const similarity = isTooSimilar(intent, existingIntents, settings.similarityThreshold);
+  const existingIntents = published.map((p) =>
+    normalizeParsedIntent(JSON.parse(p.intentJson)),
+  );
+  const similarity = isTooSimilar(
+    intent,
+    existingIntents,
+    settings.similarityThreshold,
+    getCannibalizationKeys(category.facetConfig),
+  );
 
-  const catalog = await fetchShopCatalog(admin);
+  const fullCatalog = await fetchShopCatalog(admin);
+  const catalog = await getCatalogForCategory(shop, category, fullCatalog);
+
   const manualIds = options?.manualProductIds
     ? options.manualProductIds
     : keyword.plp?.manualProductIds
       ? (JSON.parse(keyword.plp.manualProductIds) as string[])
       : undefined;
 
-  const { products, belowThreshold } = matchProducts(catalog, intent, {
+  const { products, belowThreshold } = matchProducts(catalog, intent, category.facetConfig, {
     minCount: settings.minProductCount,
     manualIds,
   });
 
-  const pageTypeId = options?.pageTypeId ?? keyword.pageTypeId ?? "style-room";
+  const pageTypeId = options?.pageTypeId ?? keyword.pageTypeId ?? settings.defaultPageTypeId ?? "style-room";
   const slug = slugify(keyword.rawKeyword);
 
   const linkCandidates = await prisma.plpPage.findMany({
     where: { shop, status: "published" },
-    select: { id: true, slug: true, localeId: true, keyword: { select: { rawKeyword: true } }, intentJson: true },
+    select: {
+      id: true,
+      slug: true,
+      localeId: true,
+      categoryId: true,
+      keyword: { select: { rawKeyword: true } },
+      intentJson: true,
+    },
   });
 
   const related = computeInternalLinks(
@@ -156,9 +207,11 @@ export async function approveAndGeneratePlp(
       id: p.id,
       slug: p.slug,
       localeId: p.localeId,
+      categoryId: p.categoryId,
       keyword: p.keyword.rawKeyword,
       intentJson: p.intentJson,
     })),
+    category.facetConfig,
   );
 
   let status: "draft" | "needs_review" | "blocked" = belowThreshold
@@ -174,6 +227,7 @@ export async function approveAndGeneratePlp(
     localeId: keyword.localeId,
     pageTypeId,
     brandTone: settings.brandTone,
+    promptConfig: category.promptConfig,
     relatedPlps: related.map((r) => ({
       slug: r.slug,
       keyword: r.anchor,
@@ -189,6 +243,7 @@ export async function approveAndGeneratePlp(
       shop,
       keywordId: keyword.id,
       pageTypeId,
+      categoryId: category.id,
       localeId: keyword.localeId,
       slug,
       status,
@@ -203,6 +258,7 @@ export async function approveAndGeneratePlp(
     },
     update: {
       status,
+      categoryId: category.id,
       productCount: products.length,
       productIds: JSON.stringify(products.map((p) => p.id)),
       contentJson: JSON.stringify(content),
@@ -212,7 +268,7 @@ export async function approveAndGeneratePlp(
     },
   });
 
-  return { plp, products, belowThreshold, similarity };
+  return { plp, products, belowThreshold, similarity, category };
 }
 
 /** Re-fetch catalog and update stored product matches without regenerating AI content. */
@@ -226,13 +282,17 @@ export async function refreshPlpMatches(
     where: { id: plpId, shop },
   });
 
-  const intent = JSON.parse(plp.intentJson) as ParsedIntent;
-  const catalog = await fetchShopCatalog(admin);
+  const intent = normalizeParsedIntent(JSON.parse(plp.intentJson));
+  const category = await resolveCategoryForIntent(shop, plp.categoryId ?? intent.categoryId);
+
+  const fullCatalog = await fetchShopCatalog(admin);
+  const catalog = await getCatalogForCategory(shop, category, fullCatalog);
+
   const manualIds = plp.manualProductIds
     ? (JSON.parse(plp.manualProductIds) as string[])
     : undefined;
 
-  const { products, belowThreshold } = matchProducts(catalog, intent, {
+  const { products, belowThreshold } = matchProducts(catalog, intent, category.facetConfig, {
     minCount: settings.minProductCount,
     manualIds,
   });
@@ -248,6 +308,7 @@ export async function refreshPlpMatches(
       productCount: products.length,
       productIds: JSON.stringify(products.map((p) => p.id)),
       status,
+      categoryId: category.id,
     },
   });
 
@@ -255,8 +316,9 @@ export async function refreshPlpMatches(
 }
 
 export async function publishPlp(shop: string, plpId: string, admin: AdminGraphql, shopDomain: string) {
+  const settings = await getOrCreateShopSettings(shop);
   const plp = await prisma.plpPage.findFirstOrThrow({ where: { id: plpId, shop }, include: { keyword: true } });
-  if (plp.status === "needs_review" || plp.productCount < 6) {
+  if (plp.status === "needs_review" || plp.productCount < settings.minProductCount) {
     throw new Error("Cannot publish: below minimum product threshold or needs review");
   }
   if (plp.status === "blocked") {
@@ -264,7 +326,7 @@ export async function publishPlp(shop: string, plpId: string, admin: AdminGraphq
   }
 
   const content = JSON.parse(plp.contentJson!);
-  const intent = JSON.parse(plp.intentJson);
+  const intent = normalizeParsedIntent(JSON.parse(plp.intentJson));
   const productIds = JSON.parse(plp.productIds ?? "[]") as string[];
   const catalog = await fetchShopCatalog(admin);
   const products = catalog

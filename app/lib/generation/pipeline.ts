@@ -7,6 +7,8 @@ import type {
   PageTypeConfig,
   ParsedIntent,
 } from "../types";
+import type { CategoryPromptConfig } from "../category/types";
+import { getIntentFacet } from "../category/intent";
 import { validateGeneratedContent } from "./validator";
 
 function fillTemplate(template: string, vars: Record<string, string>): string {
@@ -20,6 +22,7 @@ export type GenerationInput = {
   localeId: string;
   pageTypeId: string;
   brandTone: string;
+  promptConfig: CategoryPromptConfig;
   relatedPlps?: Array<{ slug: string; keyword: string; localeId: string }>;
 };
 
@@ -30,12 +33,9 @@ export async function generatePlpContent(
 ): Promise<{ content: GeneratedPlpContent; pageType: PageTypeConfig }> {
   const pageType = getPageTypeConfig(input.pageTypeId);
   const locale = getLocaleConfig(input.localeId);
+  const prompt = input.promptConfig;
 
   const vars: Record<string, string> = {
-    style: input.intent.style ?? "",
-    room: input.intent.room ?? input.intent.use_case ?? "",
-    use_case: input.intent.use_case ?? "",
-    attribute: input.intent.attribute ?? "",
     keyword: input.keyword,
     brand: "Store",
     product_count: String(input.products.length),
@@ -46,10 +46,23 @@ export async function generatePlpContent(
     products_json: JSON.stringify(input.products.slice(0, 12)),
     locale_json: JSON.stringify(locale),
     related_plps_json: JSON.stringify(input.relatedPlps ?? []),
+    style: getIntentFacet(input.intent, "style") ?? "",
+    room: getIntentFacet(input.intent, "room") ?? getIntentFacet(input.intent, "use_case") ?? "",
+    use_case: getIntentFacet(input.intent, "use_case") ?? "",
+    attribute: getIntentFacet(input.intent, "attribute") ?? "",
+    product_type: getIntentFacet(input.intent, "product_type") ?? "",
+    concern: getIntentFacet(input.intent, "concern") ?? "",
+    skin_type: getIntentFacet(input.intent, "skin_type") ?? "",
+    finish: getIntentFacet(input.intent, "finish") ?? "",
+    audience: getIntentFacet(input.intent, "audience") ?? "",
   };
 
+  for (const [key, value] of Object.entries(input.intent.facets ?? {})) {
+    if (!vars[key]) vars[key] = value;
+  }
+
   const userPrompt =
-    fillTemplate(pageType.generation.user_prompt_template, vars) +
+    fillTemplate(prompt.userPromptTemplate, vars) +
     `\n\nOUTPUT SCHEMA (use these exact English property names; only string values should be in ${locale.language}-${locale.region}):\n` +
     `${JSON.stringify(pageType.output_schema, null, 2)}`;
 
@@ -62,7 +75,7 @@ export async function generatePlpContent(
       [
         {
           role: "system",
-          content: `${pageType.generation.system_prompt} JSON keys must stay in English as defined in the output schema; localize only string values.`,
+          content: `${prompt.persona} JSON keys must stay in English as defined in the output schema; localize only string values.`,
         },
         {
           role: "user",
@@ -72,7 +85,7 @@ export async function generatePlpContent(
               : `${userPrompt}\n\nPrevious response invalid: ${lastErrors.join("; ")}. ${retryHint} Fix and return valid JSON only.`,
         },
       ],
-      { temperature: pageType.generation.temperature },
+      { temperature: prompt.temperature ?? pageType.generation.temperature },
     );
 
     const result = validateGeneratedContent(raw, pageType);

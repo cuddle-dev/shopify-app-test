@@ -1,15 +1,12 @@
 import type { CatalogProduct } from "../types";
+import type { FacetConfig, DiscoveryConfig } from "../category/types";
 
-const STOP_WORDS = new Set([
-  "the", "and", "for", "with", "wallpaper", "paper", "roll", "set", "new", "sale",
-]);
-
-function tokenize(text: string): string[] {
+function tokenize(text: string, stopWords: Set<string>): string[] {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, " ")
     .split(/\s+/)
-    .filter((t) => t.length > 2 && !STOP_WORDS.has(t));
+    .filter((t) => t.length > 2 && !stopWords.has(t));
 }
 
 function ngrams(tokens: string[], n: number): string[] {
@@ -20,14 +17,28 @@ function ngrams(tokens: string[], n: number): string[] {
   return out;
 }
 
+function discoveryConfigFromFacet(facetConfig: FacetConfig): DiscoveryConfig {
+  return (
+    facetConfig.discovery ?? {
+      stopWords: ["the", "and", "for", "with", "new", "sale"],
+      requireAnyTerms: [],
+      appendProductNoun: false,
+      productNoun: facetConfig.productNoun ?? "",
+    }
+  );
+}
+
 /**
- * Auto-discover keyword opportunities from catalog signals.
+ * Auto-discover keyword opportunities from catalog signals for one category.
  */
 export function discoverKeywordsFromCatalog(
   products: CatalogProduct[],
-  localeId: string,
+  facetConfig: FacetConfig,
   limit = 50,
 ): Array<{ keyword: string; source: "auto"; score: number }> {
+  const discovery = discoveryConfigFromFacet(facetConfig);
+  const stopWords = new Set(discovery.stopWords);
+  const noun = discovery.productNoun || facetConfig.productNoun;
   const counts = new Map<string, number>();
 
   for (const product of products) {
@@ -39,13 +50,23 @@ export function discoverKeywordsFromCatalog(
       ...product.collections,
     ].join(" ");
 
-    const tokens = tokenize(signals);
+    const tokens = tokenize(signals, stopWords);
     for (const n of [2, 3, 4]) {
       for (const phrase of ngrams(tokens, n)) {
-        if (!phrase.includes("wallpaper") && n < 3) continue;
-        const key = phrase.includes("wallpaper")
-          ? phrase
-          : `${phrase} wallpaper`;
+        if (discovery.requireAnyTerms.length > 0) {
+          const ok = discovery.requireAnyTerms.some((t) => phrase.includes(t.toLowerCase()));
+          if (!ok) continue;
+        }
+
+        if (noun && !phrase.includes(noun) && discovery.appendProductNoun && n < 3) {
+          continue;
+        }
+
+        const key =
+          noun && discovery.appendProductNoun && !phrase.includes(noun)
+            ? `${phrase} ${noun}`
+            : phrase;
+
         counts.set(key, (counts.get(key) ?? 0) + 1);
       }
     }
@@ -56,9 +77,7 @@ export function discoverKeywordsFromCatalog(
       keyword,
       source: "auto" as const,
       score: count,
-      localeId,
     }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map(({ keyword, source, score }) => ({ keyword, source, score }));
+    .slice(0, limit);
 }

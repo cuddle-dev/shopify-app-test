@@ -25,6 +25,7 @@ export default function App() {
           Dashboard
         </Link>
         <Link to="/app/keywords">Keywords</Link>
+        <Link to="/app/categories">Categories</Link>
         <Link to="/app/settings">Settings</Link>
         <Link to="/app/ai-presence">AI presence</Link>
       </NavMenu>
