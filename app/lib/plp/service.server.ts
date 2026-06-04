@@ -215,6 +215,45 @@ export async function approveAndGeneratePlp(
   return { plp, products, belowThreshold, similarity };
 }
 
+/** Re-fetch catalog and update stored product matches without regenerating AI content. */
+export async function refreshPlpMatches(
+  shop: string,
+  plpId: string,
+  admin: AdminGraphql,
+) {
+  const settings = await getOrCreateShopSettings(shop);
+  const plp = await prisma.plpPage.findFirstOrThrow({
+    where: { id: plpId, shop },
+  });
+
+  const intent = JSON.parse(plp.intentJson) as ParsedIntent;
+  const catalog = await fetchShopCatalog(admin);
+  const manualIds = plp.manualProductIds
+    ? (JSON.parse(plp.manualProductIds) as string[])
+    : undefined;
+
+  const { products, belowThreshold } = matchProducts(catalog, intent, {
+    minCount: settings.minProductCount,
+    manualIds,
+  });
+
+  let status = plp.status;
+  if (plp.status !== "published" && plp.status !== "blocked") {
+    status = belowThreshold ? "needs_review" : "draft";
+  }
+
+  const updated = await prisma.plpPage.update({
+    where: { id: plp.id },
+    data: {
+      productCount: products.length,
+      productIds: JSON.stringify(products.map((p) => p.id)),
+      status,
+    },
+  });
+
+  return { plp: updated, products, belowThreshold, minProductCount: settings.minProductCount };
+}
+
 export async function publishPlp(shop: string, plpId: string, admin: AdminGraphql, shopDomain: string) {
   const plp = await prisma.plpPage.findFirstOrThrow({ where: { id: plpId, shop }, include: { keyword: true } });
   if (plp.status === "needs_review" || plp.productCount < 6) {
